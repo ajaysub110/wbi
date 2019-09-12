@@ -27,7 +27,7 @@ class VAE(nn.Module):
 
         self.fc1 = nn.Linear(n_inputs, n_inputs)
         self.fc2 = nn.Linear(n_inputs, n_inputs)
-        self.fc4 = nn.Linear(n_inputs,128)
+        self.fc3 = nn.Linear(n_inputs,128)
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(128,256,4,2,1), # 2,2,256
@@ -42,12 +42,22 @@ class VAE(nn.Module):
             nn.Sigmoid()
         )
 
+    def reparameterize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        esp = torch.randn(*mu.size())
+        z = mu + std * esp 
+        return z
+
+    def bottleneck(self,h):
+        mu, logvar = self.fc1(h), self.fc2(h)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
+
     def encode(self,x):
         h = self.encoder(x)
-        z = F.relu(self.fc1(h))
-        z = F.relu(self.fc2(z))
-        z = F.relu(self.fc4(z))
-        return z
+        z, mu, logvar = self.bottleneck(h)
+        z = self.fc3(z)
+        return z, mu, logvar
 
     def decode(self,z):
         z = z.view((-1,128,1,1))
@@ -55,30 +65,32 @@ class VAE(nn.Module):
         return z 
 
     def forward(self, x):
-        z = self.encode(x)
+        z, mu, logvar = self.encode(x)
         z = self.decode(z)
-        return z
+        return z, mu, logvar
 
 n_epochs = 1
 batch_size = 32
-SAVE_PATH = './ckpt/image_vae_normal.ckpt'
+SAVE_PATH = './ckpt/image_vae.ckpt'
 
-def loss_fn(recon_x, x):
+def loss_fn(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x)
-    return BCE
+    KLD = 0.1 * torch.sum(torch.pow(mu, 2) + logvar.exp() -logvar - 1)
+
+    return BCE + KLD, BCE, KLD
 
 def train_image_vae(vae, data_loader):
-    optimizer = optim.Adam(vae.parameters(), lr = 0.001)
+    optimizer = optim.Adam(vae.parameters(), lr = 0.0001)
     for epoch in range(n_epochs):
         for idx, (images, _) in enumerate(data_loader):
             optimizer.zero_grad()
-            recon_images = vae(images)
-            loss = loss_fn(recon_images, images)
-            loss.backward()
+            recon_images, mu, logvar = vae(images)
+            loss, bce, kld = loss_fn(recon_images, images, mu, logvar)
+            bce.backward()
             optimizer.step()
 
-            to_print = "Epoch[{}/{}/{}] loss: {:.3f}".format(epoch+1, 
-                                n_epochs,idx, loss.data.item())
+            to_print = "Epoch[{}/{}/{}] loss: {:.3f} bce: {:.3f} kld: {:.3f}".format(epoch+1, 
+                                n_epochs,idx, loss.data.item(), bce.data.item(), kld.data.item())
             print(to_print)
         torch.save(vae.state_dict(),SAVE_PATH)
 
@@ -99,9 +111,9 @@ def main():
     # Instantiation
     vae = VAE(n_inputs=32)
 
-    summary(vae,input_size=(1,28,28))
+    # summary(vae,input_size=(1,28,28))
     #  before training
-    # o_before = vae(mnist_train_data[0][0].reshape((1,1,28,28)))
+    # o_before, mu, logvar = vae(mnist_train_data[0][0].reshape((1,1,28,28)))
     # plt.imshow(o_before.detach().numpy().reshape((28,28)))
     # plt.show()
 
@@ -110,7 +122,9 @@ def main():
     # vae = train_image_vae(vae, train_loader)
 
     # After training
-    o_after = vae(mnist_train_data[25][0].reshape((1,1,28,28)))
+    example = mnist_train_data[12]
+    print(example[1])
+    o_after, mu, logvar = vae(example[0].reshape((1,1,28,28)))
     plt.imshow(o_after.detach().numpy().reshape((28,28)))
     plt.show()
 
