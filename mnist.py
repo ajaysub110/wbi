@@ -6,8 +6,13 @@ from torchvision import datasets, transforms
 
 from modules import VAE, ImageEncoder
 
-n_epochs = 10
+from torchsummary import summary
+import matplotlib.pyplot as plt
+import numpy as np
+
+n_epochs = 5
 batch_size = 32
+SAVE_PATH = './ckpt/image_vae.ckpt'
 
 def loss_fn(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
@@ -24,15 +29,20 @@ def train_image_vae(vae, data_loader, optimizer):
             loss.backward()
             optimizer.step()
 
-            to_print = "Epoch[{}/{}/{}] Loss: {:.3f} {:.3f} {:.3f}".format(epoch+1, 
+            to_print = "Epoch[{}/{}/{}] loss: {:.3f} bce: {:.3f} kld: {:.3f}".format(epoch+1, 
                                 n_epochs,idx, loss.data.item()/batch_size, bce.data.item()/batch_size, 
                                 kld.data.item()/batch_size)
             print(to_print)
+        torch.save(vae.state_dict(),SAVE_PATH)
 
 def main():
+    tfms = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
     # Load dataset
     mnist_train_data = datasets.MNIST(
-        '/home/ajays/Downloads/',download=True,transform=transforms.ToTensor()
+        '/home/ajays/Downloads/',download=True,transform=tfms
     )
     mnist_test_data = datasets.MNIST('/home/ajays/Downloads/',train=False,download=True)
 
@@ -50,8 +60,10 @@ def main():
     # Phase 1 - Train image encoder with decoder
     eeg_encoder = vae.encoder
     vae.encoder = image_encoder
-    optimizer = optim.Adam(vae.parameters(), lr = 0.001)
+    print(vae.encoder)
+    optimizer = optim.Adam(vae.parameters(), lr = 1e-3)
 
+    summary(vae,input_size=(1,28,28))
     vae = train_image_vae(vae, train_loader, optimizer)
 
 if __name__ == '__main__':

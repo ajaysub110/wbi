@@ -12,18 +12,13 @@ class VAE(nn.Module):
 
         self.fc1 = nn.Linear(n_inputs, n_inputs)
         self.fc2 = nn.Linear(n_inputs, n_inputs)
-        self.fc3 = nn.Linear(n_inputs, n_inputs)
         self.fc4 = nn.Linear(n_inputs,1)
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(1,256,4,2,1), # 2,2,256
-            nn.ReLU(),
             nn.ConvTranspose2d(256,128,4,2,1), # 4,4,128
-            nn.ReLU(),
             nn.ConvTranspose2d(128,64,4,2,1), # 8,8,64
-            nn.ReLU(),
             nn.ConvTranspose2d(64,32,4,2,1), # 16,16,32
-            nn.ReLU(),
             nn.ConvTranspose2d(32,1,2,2,2), # 28, 28, 1
             nn.Sigmoid()
         )
@@ -45,7 +40,6 @@ class VAE(nn.Module):
         return z, mu, logvar 
 
     def decode(self,z):
-        z = self.fc3(z)
         z = self.fc4(z)
         z = z.view((-1,1,1,1))
         z = self.decoder(z)
