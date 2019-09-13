@@ -43,9 +43,9 @@ class VAE(nn.Module):
         )
 
     def reparameterize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_()
-        esp = torch.randn(*mu.size())
-        z = mu + std * esp 
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        z = mu + std * eps 
         return z
 
     def bottleneck(self,h):
@@ -74,23 +74,23 @@ batch_size = 32
 SAVE_PATH = './ckpt/image_vae.ckpt'
 
 def loss_fn(recon_x, x, mu, logvar):
-    BCE = F.binary_cross_entropy(recon_x, x)
-    KLD = 0.1 * torch.sum(torch.pow(mu, 2) + logvar.exp() -logvar - 1)
+    BCE = F.binary_cross_entropy(recon_x, x, reduction='sum')
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
-    return BCE + KLD, BCE, KLD
+    return BCE + KLD
 
 def train_image_vae(vae, data_loader):
-    optimizer = optim.Adam(vae.parameters(), lr = 0.0001)
+    optimizer = optim.Adam(vae.parameters(), lr = 1e-3)
     for epoch in range(n_epochs):
         for idx, (images, _) in enumerate(data_loader):
             optimizer.zero_grad()
             recon_images, mu, logvar = vae(images)
-            loss, bce, kld = loss_fn(recon_images, images, mu, logvar)
-            bce.backward()
+            loss = loss_fn(recon_images, images, mu, logvar)
+            loss.backward()
             optimizer.step()
 
-            to_print = "Epoch[{}/{}/{}] loss: {:.3f} bce: {:.3f} kld: {:.3f}".format(epoch+1, 
-                                n_epochs,idx, loss.data.item(), bce.data.item(), kld.data.item())
+            to_print = "Epoch[{}/{}/{}] loss: {:.3f}".format(epoch+1, 
+                                n_epochs,idx, loss.data.item())
             print(to_print)
         torch.save(vae.state_dict(),SAVE_PATH)
 
@@ -122,9 +122,10 @@ def main():
     # vae = train_image_vae(vae, train_loader)
 
     # After training
-    example = mnist_train_data[12]
-    print(example[1])
-    o_after, mu, logvar = vae(example[0].reshape((1,1,28,28)))
+    # example = mnist_train_data[23]
+    # print(example[1])
+    # o_after, mu, logvar = vae(example[0].reshape((1,1,28,28)))
+    o_after = vae.decode(torch.randn((128)))
     plt.imshow(o_after.detach().numpy().reshape((28,28)))
     plt.show()
 
