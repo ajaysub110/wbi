@@ -1,18 +1,38 @@
 import torch
-import torch.nn as nn 
-import torch.nn.functional as F 
+import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
-
-from modules import ImageEncoder
 
 from torchsummary import summary
 import matplotlib.pyplot as plt
 import numpy as np
+import mne
+import re
+import os
 
+# classes
 class Flatten(nn.Module):
     def forward(self, input):
         return input.view(input.size(0), -1)
+
+class EEGEncoder(nn.Module):
+    def __init__(self, n_inputs):
+        super(EEGEncoder,self).__init__()
+        self.encoder = nn.Sequential(
+            nn.LSTM(n_inputs, n_inputs, 1), # -1,32
+            nn.Linear(n_inputs, n_inputs), # -1,32
+            nn.ReLU() # -1,32
+        )
+
+        self.fc1 = nn.Linear(n_inputs, n_inputs)
+        self.fc2 = nn.Linear(n_inputs, 10)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self,x):
+        x = self.encoder(x)
+        x = self.sigmoid(self.fc2(self.fc1(x)))
+        return x
 
 class VAE(nn.Module):
     def __init__(self, n_inputs=32):
@@ -21,7 +41,7 @@ class VAE(nn.Module):
             nn.Conv2d(1,32,4,2,1), # -1,32,14,14
             nn.Conv2d(32,64,4,2,1), # -1,64,7,7
             nn.Conv2d(64,128,3,2,0), # -1,128,3,3
-            nn.Conv2d(128,32,3,1,0), # -1,32,1,1
+            nn.Conv2d(128,n_inputs,3,1,0), # -1,32,1,1
             Flatten() # -1,32
         )
 
@@ -45,7 +65,7 @@ class VAE(nn.Module):
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
-        z = mu + std * eps 
+        z = mu + std * eps
         return z
 
     def bottleneck(self,h):
@@ -62,7 +82,7 @@ class VAE(nn.Module):
     def decode(self,z):
         z = z.view((-1,128,1,1))
         z = self.decoder(z)
-        return z 
+        return z
 
     def forward(self, x):
         z, mu, logvar = self.encode(x)
@@ -72,6 +92,7 @@ class VAE(nn.Module):
 n_epochs = 1
 batch_size = 32
 SAVE_PATH = './ckpt/image_vae.ckpt'
+MFF_DIR_PATH = '/home/ajays/Desktop/WBI-data/'
 
 def loss_fn(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x, reduction='sum')
@@ -89,7 +110,7 @@ def train_image_vae(vae, data_loader):
             loss.backward()
             optimizer.step()
 
-            to_print = "Epoch[{}/{}/{}] loss: {:.3f}".format(epoch+1, 
+            to_print = "Epoch[{}/{}/{}] loss: {:.3f}".format(epoch+1,
                                 n_epochs,idx, loss.data.item())
             print(to_print)
         torch.save(vae.state_dict(),SAVE_PATH)
@@ -97,8 +118,8 @@ def train_image_vae(vae, data_loader):
     return vae
 
 def main():
-
-    # Load dataset
+    '''
+    # Load MNIST image dataset
     mnist_train_data = datasets.MNIST(
         '/home/ajays/Downloads/',download=True,transform=transforms.ToTensor()
     )
@@ -111,8 +132,10 @@ def main():
     # Instantiation
     vae = VAE(n_inputs=32)
 
-    # summary(vae,input_size=(1,28,28))
-    #  before training
+    # *********************
+    # IMAGE VAE TRAINING
+    # *********************
+    # plot before training
     # o_before, mu, logvar = vae(mnist_train_data[0][0].reshape((1,1,28,28)))
     # plt.imshow(o_before.detach().numpy().reshape((28,28)))
     # plt.show()
@@ -122,12 +145,19 @@ def main():
     # vae = train_image_vae(vae, train_loader)
 
     # After training
-    # example = mnist_train_data[23]
-    # print(example[1])
     # o_after, mu, logvar = vae(example[0].reshape((1,1,28,28)))
     o_after = vae.decode(torch.randn((128)))
     plt.imshow(o_after.detach().numpy().reshape((28,28)))
     plt.show()
+    '''
+    # EEG data
+    raw_files = set(filter(re.compile("[a-zA-Z0-9_-]*.mff").match, os.listdir(MFF_DIR_PATH)))
+    print(raw_files)
+    raw_iter = iter(sorted(raw_files))
+    rf = next(raw_iter)
+    print(rf)
+    raw_egi = mne.io.read_raw_egi(MFF_DIR_PATH + rf)
+    print(raw_egi.info)
 
 if __name__ == '__main__':
     main()
