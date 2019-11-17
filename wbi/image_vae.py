@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 
-from modules import VAE, EEGEncoder
+from modules import VAE
 
 from torchsummary import summary
 import matplotlib.pyplot as plt
